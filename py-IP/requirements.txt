@@ -1,0 +1,6 @@
+cffi==2.0.0
+cryptography==46.0.3
+mysql==0.0.3
+mysql-connector-python==9.5.0
+mysqlclient==2.2.7
+pycparser==2.23
