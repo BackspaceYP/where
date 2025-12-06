@@ -2,25 +2,23 @@ import mysql.connector
 from cryptography.fernet import Fernet
 import os
 import getpass
+import random
 
-# --- Configuration ---
 
 # MySQL Database Details
 DB_CONFIG = {
     "host": "localhost",
     "user": "where", 
     "password": "where@123", 
-    "database": "password_db" 
+    "database": "test" 
 }
 
-# File to store the encryption key.
+# File to store 
 KEY_FILE = "secret.key"
 
-#Security Functions 
 
 def generate_key_and_save():
     """Generates a new Fernet key."""
-    # A Fernet key must be 32 URL-safe base64-encoded bytes.
     key = Fernet.generate_key()
     with open(KEY_FILE, "wb") as key_file:
         key_file.write(key)
@@ -40,7 +38,6 @@ def load_key():
         print(f"ERROR: Could not load or generate key: {e}")
         exit()
 
-# Load the key 
 ENCRYPTION_KEY = load_key()
 FERNET = Fernet(ENCRYPTION_KEY)
 
@@ -70,7 +67,7 @@ def create_table(db):
             )
         """)
         db.commit()
-        # print(f"Table '{table_name}' checked/created successfully.")
+        # print(f"Table '{table_name}' created successfully.")
     except mysql.connector.Error as err:
         print(f"Error creating table: {err}")
     finally:
@@ -79,7 +76,7 @@ def create_table(db):
 def reset_database(db):
     """Drops the passwords table and recreates it. DANGER: Deletes all data."""
     #confirmation
-    choice = input("WARNING: This will delete ALL stored passwords. Type 'YES' to confirm: ").strip()
+    choice = input("WARNING: This will delete ALL stored passwords. Type 'YES' to confirm(case sensitive): ").strip()
     if choice != 'YES':
         print("[INFO] Database reset aborted.")
         return
@@ -135,10 +132,33 @@ def add_password(db):
         print(f"\n[ERROR] Failed to add password: {err}")
     finally:
         cursor.close()
+
 def generate_password(db):
     service = input("Enter Service Name (e.g., Google, Amazon): ").strip()
     username = input("Enter Username/Email: ").strip()
-    password = getpass.getpass("Enter Password: ").strip()
+    while True:
+        length2=int(input('Enter The Length of Password (Recomended:>8) : '))
+        if length2>8:
+            length=length2
+            break
+        else:
+            print('\n')
+            print('*'*10)
+            print('Recomended limit Not Reached Try Again ! ')
+            print('*'*10)
+            print('\n')
+    letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    digits = "0123456789"
+    symbols = "!@#$%^&*()"
+
+    
+    all_chars = letters + digits + symbols
+
+    password1 = ""
+    for _ in range(length):
+        password1 += random.choice(all_chars)
+
+    password = password1
 
     if not all([service, username, password]):
         print("All fields are required.")
@@ -221,6 +241,68 @@ def list_services(db):
     finally:
         cursor.close()
 
+
+
+def view_all_passwords(db):
+    """
+    Retrieves and displays all stored passwords, grouped either by service or username.
+    """
+    print("\n--- View All Passwords ---")
+    print("Group results by:")
+    print("1: Service Name")
+    print("2: Username")
+    
+    group_choice = input("Enter choice (1 or 2): ").strip()
+    
+    if group_choice not in ('1', '2'):
+        print("[INFO] Invalid choice. Aborting view all.")
+        return
+
+    group_by_field = "service" if group_choice == '1' else "username"
+    
+    cursor = db.cursor(buffered=True)
+    sql = f"""SELECT service, username, encrypted_password FROM passwords ORDER BY {group_by_field},
+        {'username' if group_by_field == 'service' else 'service'}"""
+
+    try:
+        cursor.execute(sql)
+        results = cursor.fetchall()  
+
+        if results:
+            print(f"\n--- All Stored Passwords (Grouped by {group_by_field.capitalize()}) ---")
+            current_group_value = None 
+            
+            for service, username, encrypted_password in results:
+                if group_by_field == 'service':
+                    current_group = service
+                else:
+                    current_group = username
+                if current_group != current_group_value:
+                    print(f"\n>>> {group_by_field.capitalize()}: **{current_group}**")
+                    current_group_value = current_group
+
+                try:
+                    decrypted_password = FERNET.decrypt(encrypted_password.encode()).decode()
+                except Exception:
+                    decrypted_password = "[Decryption Failed – Wrong Key or Corrupted Data]"
+                
+                # Display the other field's info along with the password
+                if group_by_field == 'service':
+                    print(f"  Username: {username}, Password: {decrypted_password}")
+                else: # group_by_field == 'username'
+                    print(f"  Service: {service}, Password: {decrypted_password}")
+
+            print("\n-------------------------------------------------\n")
+        else:
+            print("\n[INFO] No passwords stored yet.")
+    except mysql.connector.Error as err:
+        print(f"\n[ERROR] Failed to retrieve all passwords: {err}")
+    finally:
+        cursor.close()
+
+
+
+
 def main():
     """Main application loop."""
     print("--- Python/MySQL Secure Password Manager ---")
@@ -229,38 +311,41 @@ def main():
     if not db:
         return
 
-    # create the database table
+    # create the database 
     create_table(db)
 
     while True:
         print("\nWhat would you like to do?")
         print("1: Add New Password")
         print("2: Get Password")
-        print("3: List Services")
-        print("4: Quit")
-        print("5: Reset Database (DANGER: Deletes all data!)")
-        print("6: Generate Password : ")
-        choice = input("Enter choice (1-6): ").strip()
+        print("3: Generate Password : ")
+
+        print("4: List Services")
+        
+        print('5: View All Passwords : ')
+        print("6: Quit")
+        print("7: Reset Database (DANGER: Deletes all data!)")
+        
+        choice = input("Enter choice (1-7): ").strip()
 
         if choice == '1':
             add_password(db)
         elif choice == '2':
             get_password(db)
         elif choice == '3':
-            list_services(db)
+            generate_password(db)
         elif choice == '4':
+            list_services(db)
+        elif choice == '7':
+            reset_database(db)
+        elif choice == '6':
             print("Exiting Password Manager. Goodbye!")
             break
         elif choice == '5':
-            reset_database(db)
-        elif choice == '6':
-            generate_password(db)
+            view_all_passwords(db)
         else:
             print("Invalid choice. Please enter a number between 1 and 5.")
 
     if db.is_connected():
         db.close()
-        # print("MySQL connection closed.")
-
-if __name__ == "__main__":
-    main()
+main()
